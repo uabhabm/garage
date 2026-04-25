@@ -1,15 +1,16 @@
 <!doctype html>
-<html lang="en">
+<html lang="sv">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Excel → CSV (user summary)</title>
+    <title>Excel → CSV (förbrukning)</title>
     <style>
       :root {
         --bg: #0f1216;
         --fg: #e6e8eb;
         --muted: #9aa3ad;
         --acc: #3b82f6;
+        --mbf: #14b8a6;
         --err: #f87171;
         --b: #2a3038;
       }
@@ -51,7 +52,8 @@
         margin-bottom: 0.35rem;
       }
       input[type="file"],
-      input[type="text"] {
+      input[type="text"],
+      input[type="date"] {
         width: 100%;
         padding: 0.5rem 0.65rem;
         border: 1px solid var(--b);
@@ -63,6 +65,12 @@
       }
       .row {
         margin-bottom: 0.25rem;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem;
+        margin-top: 0.25rem;
       }
       button {
         display: inline-flex;
@@ -77,9 +85,39 @@
         border-radius: 6px;
         cursor: pointer;
       }
+      button.btn-mbf {
+        background: var(--mbf);
+        color: #0a0f0e;
+      }
       button:disabled {
         opacity: 0.55;
         cursor: not-allowed;
+      }
+      fieldset.mbf {
+        border: 1px dashed var(--b);
+        border-radius: 8px;
+        margin: 0 0 1rem 0;
+        padding: 1rem 1rem 0.25rem 1rem;
+      }
+      fieldset.mbf legend {
+        color: var(--muted);
+        font-size: 0.85rem;
+        padding: 0 0.35rem;
+      }
+      fieldset.mbf p.hint {
+        margin: -0.5rem 0 0.75rem 0;
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+      .dates {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem 1rem;
+      }
+      @media (max-width: 520px) {
+        .dates {
+          grid-template-columns: 1fr;
+        }
       }
       .result {
         max-width: 64rem;
@@ -124,37 +162,53 @@
     </style>
   </head>
   <body>
-    <h1>Consumption report → CSV</h1>
+    <h1>Förbrukningsrapport → CSV</h1>
     <p class="lead">
-      Upload a Consumption Summary (User) <code style="color: var(--acc)">.xlsx</code> file. The
-      file is read in the browser, base64-encoded, and sent to <code>/api/parse?format=json</code>
-      (same on Vercel and local <code>npm run dev</code>).
+      Ladda upp en Consumption Summary (User) <code style="color: var(--acc)">.xlsx</code>. Filen läses i
+      webbläsaren, base64-kodas och skickas till <code>/api/parse?format=json</code> (lokalt:
+      <code>npm run dev</code>).
     </p>
 
-    <form id="upload-form" action="/api/parse" method="post" enctype="application/json" autocomplete="off">
+    <form id="upload-form" autocomplete="off">
       <div class="row">
-        <label for="file">Excel file</label>
+        <label for="file">Excel-fil</label>
         <input id="file" name="file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
       </div>
       <div class="row">
-        <label for="sheet">Sheet name (optional)</label>
-        <input
-          id="sheet"
-          name="sheet"
-          type="text"
-          placeholder="e.g. user summary"
-          spellcheck="false"
-        />
+        <label for="sheet">Bladnamn (valfritt)</label>
+        <input id="sheet" name="sheet" type="text" placeholder="t.ex. user summary" spellcheck="false" />
       </div>
-      <button type="submit" id="go">Convert to CSV</button>
+
+      <fieldset class="mbf">
+        <legend>MBF / IMD (avläsning)</legend>
+        <p class="hint">
+          Vid <strong>Convert to MBF CSV</strong> används start- och slutdatum som kolumnerna Start och Slut
+          (format YYYYMMDD i filen). RFID hämtas ur användarnamnet, t.ex. <code>Admin RFID (AB1E9E41)</code>.
+        </p>
+        <div class="dates">
+          <div>
+            <label for="dateStart">Avläsning start</label>
+            <input id="dateStart" name="dateStart" type="date" />
+          </div>
+          <div>
+            <label for="dateEnd">Avläsning slut</label>
+            <input id="dateEnd" name="dateEnd" type="date" />
+          </div>
+        </div>
+      </fieldset>
+
+      <div class="actions">
+        <button type="submit" id="go">Convert to CSV</button>
+        <button type="button" class="btn-mbf" id="go-mbf">Convert to MBF CSV</button>
+      </div>
     </form>
 
     <div class="result" id="result" hidden>
-      <h2>Result</h2>
+      <h2>Resultat</h2>
       <div class="meta" id="meta"></div>
       <div id="error" class="msg-err" hidden></div>
       <p style="margin: 0.5rem 0 0.5rem 0">
-        <a id="dl" href="#" download="export.csv" style="color: var(--acc); font-size: 0.9rem" hidden>Download export.csv</a>
+        <a id="dl" href="#" download="export.csv" style="color: var(--acc); font-size: 0.9rem" hidden>Ladda ner CSV</a>
       </p>
       <pre id="csv" hidden></pre>
     </div>
@@ -166,6 +220,7 @@
       const pre = document.getElementById("csv");
       const meta = document.getElementById("meta");
       const btn = document.getElementById("go");
+      const btnMbf = document.getElementById("go-mbf");
       const dl = document.getElementById("dl");
       let lastBlobUrl;
 
@@ -180,11 +235,24 @@
         return btoa(binary);
       }
 
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
+      async function convert(mbf) {
         const f = document.getElementById("file");
         const sheet = document.getElementById("sheet");
+        const dateStart = document.getElementById("dateStart");
+        const dateEnd = document.getElementById("dateEnd");
         if (!f.files || !f.files[0]) return;
+
+        if (mbf) {
+          if (!dateStart.value || !dateEnd.value) {
+            errEl.textContent = "Fyll i avläsning start och slut för MBF-export.";
+            errEl.hidden = false;
+            meta.textContent = "";
+            pre.hidden = true;
+            dl.hidden = true;
+            out.hidden = false;
+            return;
+          }
+        }
 
         errEl.hidden = true;
         pre.hidden = true;
@@ -195,11 +263,18 @@
         }
         out.hidden = true;
         btn.disabled = true;
+        btnMbf.disabled = true;
         const file = f.files[0];
         const buf = await file.arrayBuffer();
         const fileBase64 = arrayBufferToBase64(buf);
+        /** @type {Record<string, string>} */
         const payload = { fileBase64 };
         if (sheet.value && sheet.value.trim()) payload.sheetName = sheet.value.trim();
+        if (mbf) {
+          payload.outputFormat = "mbf";
+          payload.dateStart = dateStart.value;
+          payload.dateEnd = dateEnd.value;
+        }
 
         const url = new URL("api/parse", window.location.origin);
         url.searchParams.set("format", "json");
@@ -215,25 +290,27 @@
           try {
             data = JSON.parse(text);
           } catch {
-            throw new Error("Server did not return JSON. Status " + res.status);
+            throw new Error("Servern returnerade inte JSON. Status " + res.status);
           }
           if (!res.ok) {
-            throw new Error((data && data.error) || text || "Request failed: " + res.status);
+            throw new Error((data && data.error) || text || "Fel: " + res.status);
           }
           if (data && data.ok && typeof data.csv === "string") {
-            meta.textContent = `Rows: ${data.rowCount} · sheet: ${data.sheetName} · source: ${file.name}`;
+            const fmt = data.csvFormat === "mbf" ? "MBF" : "standard";
+            meta.textContent = `Format: ${fmt} · rader: ${data.rowCount} · blad: ${data.sheetName} · källa: ${file.name}`;
             pre.textContent = data.csv;
             pre.hidden = false;
             const blob = new Blob([data.csv], { type: "text/csv; charset=utf-8" });
             lastBlobUrl = URL.createObjectURL(blob);
             dl.href = lastBlobUrl;
-            dl.setAttribute("download", file.name.replace(/\.xlsx?$/i, "") + ".csv");
+            const base = file.name.replace(/\.xlsx?$/i, "");
+            dl.setAttribute("download", data.csvFormat === "mbf" ? base + "-mbf.csv" : base + ".csv");
             dl.hidden = false;
             out.hidden = false;
             out.scrollIntoView({ behavior: "smooth", block: "nearest" });
             return;
           }
-          throw new Error("Invalid response: missing ok/csv");
+          throw new Error("Ogiltigt svar: saknar ok/csv");
         } catch (ex) {
           errEl.textContent = String(ex && ex.message ? ex.message : ex);
           errEl.hidden = false;
@@ -241,8 +318,15 @@
           out.hidden = false;
         } finally {
           btn.disabled = false;
+          btnMbf.disabled = false;
         }
+      }
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        convert(false);
       });
+      btnMbf.addEventListener("click", () => convert(true));
     </script>
   </body>
 </html>

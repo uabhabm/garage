@@ -83,6 +83,7 @@ const server = http.createServer(async (req, res) => {
           rowCount: out.rowCount,
           sheetName: out.sheetName,
           headerRowIndex: out.headerRowIndex,
+          csvFormat: out.csvFormat,
         })
       );
     }
@@ -91,6 +92,7 @@ const server = http.createServer(async (req, res) => {
       "Content-Type": "text/csv; charset=utf-8",
       "X-Row-Count": String(out.rowCount),
       "X-Sheet-Name": out.sheetName,
+      "X-Csv-Format": out.csvFormat,
     });
     return res.end(out.csv);
   }

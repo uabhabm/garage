@@ -1,10 +1,11 @@
 import { parseConsumptionUserSummaryXlsx } from "./parseReport.mjs";
 import { rowsToCsv } from "./toCsv.mjs";
+import { rowsToMbfCsv } from "./toMbfCsv.mjs";
 
 /**
  * @param {unknown} body
  * @returns
- *   | { ok: true; status: 200; csv: string; rowCount: number; sheetName: string; headerRowIndex: number }
+ *   | { ok: true; status: 200; csv: string; rowCount: number; sheetName: string; headerRowIndex: number; csvFormat: "standard" | "mbf" }
  *   | { ok: false; status: number; body: { error: string; code: string } }
  */
 export function runParseFromClientBody(body) {
@@ -16,8 +17,8 @@ export function runParseFromClientBody(body) {
     };
   }
 
-  const b = /** @type {{ file?: string; fileBase64?: string; sheetName?: string }} */ (body);
-  let b64 = b.file ?? b.fileBase64;
+  const b = /** @type {Record<string, unknown>} */ (body);
+  let b64 = /** @type {string | undefined} */ (b.file ?? b.fileBase64);
   if (typeof b64 !== "string" || !b64.length) {
     return {
       ok: false,
@@ -50,19 +51,65 @@ export function runParseFromClientBody(body) {
     };
   }
 
+  const wantMbf =
+    b.outputFormat === "mbf" || b.csvFormat === "mbf" || b.format === "mbf";
+
   try {
-    const sheetName = typeof b.sheetName === "string" && b.sheetName.trim() ? b.sheetName.trim() : undefined;
+    const sheetName =
+      typeof b.sheetName === "string" && b.sheetName.trim() ? b.sheetName.trim() : undefined;
     const parsed = parseConsumptionUserSummaryXlsx(
       xlsx,
       sheetName ? { sheetName } : {}
     );
+
+    let csv;
+    /** @type {"standard" | "mbf"} */
+    let csvFormat = "standard";
+
+    if (wantMbf) {
+      const ds = b.dateStart ?? b.readingDateStart;
+      const de = b.dateEnd ?? b.readingDateEnd;
+      if (typeof ds !== "string" || !String(ds).trim() || typeof de !== "string" || !String(de).trim()) {
+        return {
+          ok: false,
+          status: 400,
+          body: {
+            error: "MBF kräver dateStart och dateEnd (YYYY-MM-DD).",
+            code: "MBF_DATES_REQUIRED",
+          },
+        };
+      }
+      try {
+        csv = rowsToMbfCsv(parsed.rows, {
+          dateStart: String(ds).trim(),
+          dateEnd: String(de).trim(),
+        });
+        csvFormat = "mbf";
+      } catch (e) {
+        const code = typeof e?.code === "string" ? e.code : "MBF_ERROR";
+        const message = e?.message ?? "MBF-export misslyckades";
+        const clientErrors = new Set([
+          "MBF_UNKNOWN_RFID",
+          "MBF_NO_RFID",
+          "MBF_BAD_ENERGY",
+          "MBF_BAD_DATE",
+          "MBF_BAD_PERIOD",
+        ]);
+        const status = clientErrors.has(code) ? 422 : 500;
+        return { ok: false, status, body: { error: message, code } };
+      }
+    } else {
+      csv = rowsToCsv(parsed.rows);
+    }
+
     return {
       ok: true,
       status: 200,
-      csv: rowsToCsv(parsed.rows),
+      csv,
       rowCount: parsed.rows.length,
       sheetName: parsed.sheetName,
       headerRowIndex: parsed.headerRowIndex,
+      csvFormat,
     };
   } catch (e) {
     const code = e?.code === "TABLE_NOT_FOUND" ? "TABLE_NOT_FOUND" : "PARSE_ERROR";

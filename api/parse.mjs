@@ -36,9 +36,12 @@ export default async function handler(req, res) {
             body: {
               fileBase64: "<string: base64-encoded .xlsx contents>",
               sheetName: "<optional: exact sheet name>",
+              outputFormat: "<optional: mbf for IMD/MBF-radformat>",
+              dateStart: "<with mbf: YYYY-MM-DD avläsning start>",
+              dateEnd: "<with mbf: YYYY-MM-DD avläsning slut>",
             },
             alias: "The field 'file' is accepted instead of 'fileBase64'.",
-            response: "text/csv by default; add ?format=json for { csv, rowCount, sheetName }.",
+            response: "text/csv by default; add ?format=json for { csv, rowCount, sheetName, csvFormat }.",
           },
         })
       );
@@ -108,6 +111,7 @@ export default async function handler(req, res) {
           rowCount: out.rowCount,
           sheetName: out.sheetName,
           headerRowIndex: out.headerRowIndex,
+          csvFormat: out.csvFormat,
         })
       );
   }
@@ -117,6 +121,7 @@ export default async function handler(req, res) {
     .setHeader("Content-Type", "text/csv; charset=utf-8")
     .setHeader("X-Row-Count", String(out.rowCount))
     .setHeader("X-Sheet-Name", out.sheetName)
+    .setHeader("X-Csv-Format", out.csvFormat)
     .end(out.csv);
 }
 
