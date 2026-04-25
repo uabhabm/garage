@@ -89,6 +89,10 @@
         background: var(--mbf);
         color: #0a0f0e;
       }
+      button.btn-mail {
+        background: #f59e0b;
+        color: #1a0f00;
+      }
       button:disabled {
         opacity: 0.55;
         cursor: not-allowed;
@@ -108,16 +112,6 @@
         margin: -0.5rem 0 0.75rem 0;
         font-size: 0.82rem;
         color: var(--muted);
-      }
-      .dates {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 0.75rem 1rem;
-      }
-      @media (max-width: 520px) {
-        .dates {
-          grid-template-columns: 1fr;
-        }
       }
       .result {
         max-width: 64rem;
@@ -193,35 +187,36 @@
         <label for="file">Excel-fil</label>
         <input id="file" name="file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
       </div>
-      <div class="row">
-        <label for="sheet">Bladnamn (valfritt)</label>
-        <input id="sheet" name="sheet" type="text" placeholder="t.ex. user summary" spellcheck="false" />
-      </div>
-
       <fieldset class="mbf">
         <legend>MBF / IMD (avläsning)</legend>
         <p class="hint">
-          Vid <strong>Convert to MBF CSV</strong> väljer du <strong>år och månad</strong>. Datum i filen blir
-          <em>Start</em> = <strong>den 1:a</strong> i vald startmånad och <em>Slut</em> = <strong>sista dagen</strong> i vald
-          slutmånad (28, 29 vid skottår i februari, 30 eller 31 i övrigt), i format YYYYMMDD. RFID hämtas ur
-          användarnamnet, t.ex. <code>Admin RFID (AB1E9E41)</code>. Efter export visas <strong>Ladda ner MBF CSV</strong>
-          under resultatet.
+          Vid <strong>Convert to MBF CSV</strong> hämtas kolumnerna <em>Start</em> och <em>Slut</em> automatiskt från
+          rapportfälten <strong>Date from</strong> och <strong>Date to</strong> i Excel-filen (som YYYYMMDD). RFID
+          hämtas ur användarnamnet, t.ex. <code>Admin RFID (AB1E9E41)</code>. Efter export visas
+          <strong>Ladda ner MBF CSV</strong> under resultatet.
         </p>
-        <div class="dates">
-          <div>
-            <label for="dateStart">Avläsning start (år och månad)</label>
-            <input id="dateStart" name="dateStart" type="month" />
-          </div>
-          <div>
-            <label for="dateEnd">Avläsning slut (år och månad)</label>
-            <input id="dateEnd" name="dateEnd" type="month" />
-          </div>
+        <div class="row">
+          <label for="mailTo">E-post för MBF-rapport</label>
+          <input
+            id="mailTo"
+            name="mailTo"
+            type="email"
+            inputmode="email"
+            autocomplete="email"
+            placeholder="namn@example.com"
+            spellcheck="false"
+          />
         </div>
+        <p class="hint" style="margin-top: -0.25rem">
+          <strong>Mail MBF CSV</strong> skickar MBF-filen som bilaga via Resend. På servern krävs
+          <code>RESEND_API_KEY</code> och <code>RESEND_FROM_EMAIL</code> (t.ex. i Vercel Environment Variables).
+        </p>
       </fieldset>
 
       <div class="actions">
         <button type="submit" id="go">Convert to CSV</button>
         <button type="button" class="btn-mbf" id="go-mbf">Convert to MBF CSV</button>
+        <button type="button" class="btn-mail" id="go-mail-mbf">Mail MBF CSV</button>
       </div>
     </form>
 
@@ -244,6 +239,7 @@
       const meta = document.getElementById("meta");
       const btn = document.getElementById("go");
       const btnMbf = document.getElementById("go-mbf");
+      const btnMailMbf = document.getElementById("go-mail-mbf");
       const downloads = document.getElementById("downloads");
       const dlStd = document.getElementById("dl-std");
       const dlMbf = document.getElementById("dl-mbf");
@@ -274,24 +270,7 @@
 
       async function convert(mbf) {
         const f = document.getElementById("file");
-        const sheet = document.getElementById("sheet");
-        const dateStart = document.getElementById("dateStart");
-        const dateEnd = document.getElementById("dateEnd");
         if (!f.files || !f.files[0]) return;
-
-        if (mbf) {
-          if (!dateStart.value || !dateEnd.value) {
-            errEl.textContent = "Välj avläsningsmånad för start och slut (år och månad).";
-            errEl.hidden = false;
-            meta.textContent = "";
-            pre.hidden = true;
-            downloads.hidden = true;
-            dlStd.hidden = true;
-            dlMbf.hidden = true;
-            out.hidden = false;
-            return;
-          }
-        }
 
         errEl.hidden = true;
         pre.hidden = true;
@@ -302,16 +281,14 @@
         out.hidden = true;
         btn.disabled = true;
         btnMbf.disabled = true;
+        btnMailMbf.disabled = true;
         const file = f.files[0];
         const buf = await file.arrayBuffer();
         const fileBase64 = arrayBufferToBase64(buf);
         /** @type {Record<string, string>} */
         const payload = { fileBase64 };
-        if (sheet.value && sheet.value.trim()) payload.sheetName = sheet.value.trim();
         if (mbf) {
           payload.outputFormat = "mbf";
-          payload.dateStart = dateStart.value;
-          payload.dateEnd = dateEnd.value;
         }
 
         const url = new URL("api/parse", window.location.origin);
@@ -335,7 +312,11 @@
           }
           if (data && data.ok && typeof data.csv === "string") {
             const fmt = data.csvFormat === "mbf" ? "MBF" : "standard";
-            meta.textContent = `Format: ${fmt} · rader: ${data.rowCount} · blad: ${data.sheetName} · källa: ${file.name}`;
+            let period = "";
+            if (data.csvFormat === "mbf" && data.reportDateFromYmd && data.reportDateToYmd) {
+              period = ` · period (från fil): ${data.reportDateFromYmd}–${data.reportDateToYmd}`;
+            }
+            meta.textContent = `Format: ${fmt} · rader: ${data.rowCount} · källa: ${file.name}${period}`;
             pre.textContent = data.csv;
             pre.hidden = false;
             const blob = new Blob([data.csv], { type: "text/csv; charset=utf-8" });
@@ -368,6 +349,73 @@
         } finally {
           btn.disabled = false;
           btnMbf.disabled = false;
+          btnMailMbf.disabled = false;
+        }
+      }
+
+      async function mailMbf() {
+        const f = document.getElementById("file");
+        const mailTo = document.getElementById("mailTo");
+        if (!f.files || !f.files[0]) return;
+        const addr = (mailTo.value || "").trim();
+        if (!addr) {
+          errEl.textContent = "Ange en e-postadress.";
+          errEl.hidden = false;
+          meta.textContent = "";
+          pre.hidden = true;
+          downloads.hidden = true;
+          dlStd.hidden = true;
+          dlMbf.hidden = true;
+          out.hidden = false;
+          return;
+        }
+
+        errEl.hidden = true;
+        pre.hidden = true;
+        downloads.hidden = true;
+        dlStd.hidden = true;
+        dlMbf.hidden = true;
+        revokeDownloadUrls();
+        out.hidden = true;
+        btn.disabled = true;
+        btnMbf.disabled = true;
+        btnMailMbf.disabled = true;
+        const file = f.files[0];
+        const buf = await file.arrayBuffer();
+        const fileBase64 = arrayBufferToBase64(buf);
+        const url = new URL("api/mail-mbf", window.location.origin);
+
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({ fileBase64, to: addr }),
+          });
+          const text = await res.text();
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch {
+            throw new Error("Servern returnerade inte JSON. Status " + res.status);
+          }
+          if (!res.ok || !data.ok) {
+            throw new Error((data && data.error) || text || "Fel: " + res.status);
+          }
+          meta.textContent = data.message || "Mailet har skickats.";
+          pre.textContent = "";
+          pre.hidden = true;
+          downloads.hidden = true;
+          out.hidden = false;
+          out.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        } catch (ex) {
+          errEl.textContent = String(ex && ex.message ? ex.message : ex);
+          errEl.hidden = false;
+          meta.textContent = "";
+          out.hidden = false;
+        } finally {
+          btn.disabled = false;
+          btnMbf.disabled = false;
+          btnMailMbf.disabled = false;
         }
       }
 
@@ -376,22 +424,7 @@
         convert(false);
       });
       btnMbf.addEventListener("click", () => convert(true));
-
-      function defaultPreviousMonthYm() {
-        const d = new Date();
-        d.setDate(1);
-        d.setMonth(d.getMonth() - 1);
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, "0");
-        return `${y}-${m}`;
-      }
-      document.addEventListener("DOMContentLoaded", () => {
-        const ym = defaultPreviousMonthYm();
-        const ds = document.getElementById("dateStart");
-        const de = document.getElementById("dateEnd");
-        if (ds && !ds.value) ds.value = ym;
-        if (de && !de.value) de.value = ym;
-      });
+      btnMailMbf.addEventListener("click", () => mailMbf());
     </script>
   </body>
 </html>

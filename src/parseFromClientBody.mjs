@@ -5,7 +5,7 @@ import { rowsToMbfCsv } from "./toMbfCsv.mjs";
 /**
  * @param {unknown} body
  * @returns
- *   | { ok: true; status: 200; csv: string; rowCount: number; sheetName: string; headerRowIndex: number; csvFormat: "standard" | "mbf" }
+ *   | { ok: true; status: 200; csv: string; rowCount: number; sheetName: string; headerRowIndex: number; csvFormat: "standard" | "mbf"; reportDateFromYmd: string | null; reportDateToYmd: string | null }
  *   | { ok: false; status: number; body: { error: string; code: string } }
  */
 export function runParseFromClientBody(body) {
@@ -55,34 +55,30 @@ export function runParseFromClientBody(body) {
     b.outputFormat === "mbf" || b.csvFormat === "mbf" || b.format === "mbf";
 
   try {
-    const sheetName =
-      typeof b.sheetName === "string" && b.sheetName.trim() ? b.sheetName.trim() : undefined;
-    const parsed = parseConsumptionUserSummaryXlsx(
-      xlsx,
-      sheetName ? { sheetName } : {}
-    );
+    const parsed = parseConsumptionUserSummaryXlsx(xlsx, {});
 
     let csv;
     /** @type {"standard" | "mbf"} */
     let csvFormat = "standard";
 
     if (wantMbf) {
-      const ds = b.dateStart ?? b.readingDateStart;
-      const de = b.dateEnd ?? b.readingDateEnd;
-      if (typeof ds !== "string" || !String(ds).trim() || typeof de !== "string" || !String(de).trim()) {
+      const dateStart = parsed.reportDateFromYmd;
+      const dateEnd = parsed.reportDateToYmd;
+      if (!dateStart || !dateEnd) {
         return {
           ok: false,
-          status: 400,
+          status: 422,
           body: {
-            error: "MBF kräver dateStart och dateEnd (ÅÅÅÅ-MM för månad, eller ÅÅÅÅ-MM-DD).",
-            code: "MBF_DATES_REQUIRED",
+            error:
+              "Kunde inte läsa Date from och Date to från Excel-filen. Kontrollera att rapporten innehåller dessa fält med datum.",
+            code: "MBF_REPORT_DATES_MISSING",
           },
         };
       }
       try {
         csv = rowsToMbfCsv(parsed.rows, {
-          dateStart: String(ds).trim(),
-          dateEnd: String(de).trim(),
+          dateStart,
+          dateEnd,
         });
         csvFormat = "mbf";
       } catch (e) {
@@ -110,6 +106,8 @@ export function runParseFromClientBody(body) {
       sheetName: parsed.sheetName,
       headerRowIndex: parsed.headerRowIndex,
       csvFormat,
+      reportDateFromYmd: parsed.reportDateFromYmd,
+      reportDateToYmd: parsed.reportDateToYmd,
     };
   } catch (e) {
     const code = e?.code === "TABLE_NOT_FOUND" ? "TABLE_NOT_FOUND" : "PARSE_ERROR";

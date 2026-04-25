@@ -109,6 +109,7 @@ export function ymToEndYmd(ym) {
  */
 function periodBoundaryToYmd(s, role) {
   const t = String(s).trim();
+  if (/^\d{8}$/.test(t)) return t;
   if (/^\d{4}-\d{2}$/.test(t)) {
     return role === "start" ? ymToStartYmd(t) : ymToEndYmd(t);
   }
@@ -117,7 +118,7 @@ function periodBoundaryToYmd(s, role) {
 
 /**
  * @param { { user: string, totalDuration: string, totalEnergy: string }[] } rows
- * @param {{ dateStart: string, dateEnd: string }} period YYYY-MM (första/sista dagen i månaden) eller YYYY-MM-DD
+ * @param {{ dateStart: string, dateEnd: string }} period YYYYMMDD, YYYY-MM-DD, eller YYYY-MM (första/sista i månaden)
  * @returns {string} full CSV inkl. rubrikrad och avslutande radbrytning
  */
 export function rowsToMbfCsv(rows, period) {

@@ -1,4 +1,5 @@
 import XLSX from "xlsx";
+import { extractReportDateCells, reportCellValueToYyyyMmDd } from "./reportDates.mjs";
 
 function norm(s) {
   return String(s ?? "")
@@ -57,13 +58,21 @@ function cellToString(v) {
  * @returns {{
  *   rows: { user: string, totalDuration: string, totalEnergy: string }[],
  *   sheetName: string,
- *   headerRowIndex: number
+ *   headerRowIndex: number,
+ *   reportDateFromYmd: string | null,
+ *   reportDateToYmd: string | null
  * }}
  */
 export function parseConsumptionUserSummaryXlsx(input, options = {}) {
   const wb = XLSX.read(input, { type: "buffer", cellDates: false });
   if (!wb.SheetNames.length) {
-    return { rows: [], sheetName: "", headerRowIndex: -1 };
+    return {
+      rows: [],
+      sheetName: "",
+      headerRowIndex: -1,
+      reportDateFromYmd: null,
+      reportDateToYmd: null,
+    };
   }
 
   let name;
@@ -78,10 +87,20 @@ export function parseConsumptionUserSummaryXlsx(input, options = {}) {
 
   const sheet = wb.Sheets[name];
   if (!sheet) {
-    return { rows: [], sheetName: name, headerRowIndex: -1 };
+    return {
+      rows: [],
+      sheetName: name,
+      headerRowIndex: -1,
+      reportDateFromYmd: null,
+      reportDateToYmd: null,
+    };
   }
 
   const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+  const { fromVal, toVal } = extractReportDateCells(matrix);
+  const reportDateFromYmd = reportCellValueToYyyyMmDd(fromVal);
+  const reportDateToYmd = reportCellValueToYyyyMmDd(toVal);
+
   const loc = findUserTableHeader(matrix);
   if (!loc) {
     const err = new Error(
@@ -108,5 +127,11 @@ export function parseConsumptionUserSummaryXlsx(input, options = {}) {
     });
   }
 
-  return { rows, sheetName: name, headerRowIndex: headerRow };
+  return {
+    rows,
+    sheetName: name,
+    headerRowIndex: headerRow,
+    reportDateFromYmd,
+    reportDateToYmd,
+  };
 }

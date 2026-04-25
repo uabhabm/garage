@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { runParseFromClientBody } from "./src/parseFromClientBody.mjs";
+import { runMailMbfFromClientBody } from "./src/mailMbf.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
@@ -84,6 +85,8 @@ const server = http.createServer(async (req, res) => {
           sheetName: out.sheetName,
           headerRowIndex: out.headerRowIndex,
           csvFormat: out.csvFormat,
+          reportDateFromYmd: out.reportDateFromYmd,
+          reportDateToYmd: out.reportDateToYmd,
         })
       );
     }
@@ -95,6 +98,36 @@ const server = http.createServer(async (req, res) => {
       "X-Csv-Format": out.csvFormat,
     });
     return res.end(out.csv);
+  }
+
+  if (fullUrl.pathname === "/api/mail-mbf" && req.method === "GET") {
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    return res.end(
+      JSON.stringify({
+        ok: true,
+        name: "mail-mbf-csv",
+        post: { fileBase64: "base64 .xlsx", to: "mottagare@example.com" },
+        env: ["RESEND_API_KEY", "RESEND_FROM_EMAIL"],
+      })
+    );
+  }
+
+  if (fullUrl.pathname === "/api/mail-mbf" && req.method === "POST") {
+    let body;
+    try {
+      const raw = await readBody(req);
+      body = raw.length ? JSON.parse(raw.toString("utf8")) : null;
+    } catch (e) {
+      res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+      return res.end(JSON.stringify({ ok: false, error: "Ogiltig JSON", code: "BAD_JSON" }));
+    }
+    const out = await runMailMbfFromClientBody(body);
+    if (!out.ok) {
+      res.writeHead(out.status, { "Content-Type": "application/json; charset=utf-8" });
+      return res.end(JSON.stringify({ ok: false, ...out.body }));
+    }
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    return res.end(JSON.stringify({ ok: true, message: "Mailet har skickats." }));
   }
 
   const pathname = fullUrl.pathname === "" ? "/" : fullUrl.pathname;

@@ -3,6 +3,9 @@
   "functions": {
     "api/parse.mjs": {
       "maxDuration": 30
+    },
+    "api/mail-mbf.mjs": {
+      "maxDuration": 30
     }
   }
 }

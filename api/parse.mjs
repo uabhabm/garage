@@ -9,8 +9,7 @@ const cors = {
 /**
  * Vercel Node serverless: POST application/json
  *   { "file" | "fileBase64": "<base64 of .xlsx file>" }
- *   optional: { "sheetName": "user summary" }
- * With ?format=json the response is JSON: { "ok", "csv", "rowCount", "sheetName" }.
+ * With ?format=json the response is JSON: { "ok", "csv", "rowCount", "sheetName", ... }.
  * Default: 200 text/csv body, or 4xx/5xx JSON { error, code }.
  */
 export default async function handler(req, res) {
@@ -35,10 +34,7 @@ export default async function handler(req, res) {
             contentType: "application/json",
             body: {
               fileBase64: "<string: base64-encoded .xlsx contents>",
-              sheetName: "<optional: exact sheet name>",
-              outputFormat: "<optional: mbf for IMD/MBF-radformat>",
-              dateStart: "<with mbf: YYYY-MM (månad) eller YYYY-MM-DD; YYYY-MM → första dagen i månaden>",
-              dateEnd: "<with mbf: YYYY-MM eller YYYY-MM-DD; YYYY-MM → sista dagen i månaden>",
+              outputFormat: "<optional: mbf — datum Start/Slut läses från Date from / Date to i Excel-filen>",
             },
             alias: "The field 'file' is accepted instead of 'fileBase64'.",
             response: "text/csv by default; add ?format=json for { csv, rowCount, sheetName, csvFormat }.",
@@ -112,6 +108,8 @@ export default async function handler(req, res) {
           sheetName: out.sheetName,
           headerRowIndex: out.headerRowIndex,
           csvFormat: out.csvFormat,
+          reportDateFromYmd: out.reportDateFromYmd,
+          reportDateToYmd: out.reportDateToYmd,
         })
       );
   }
