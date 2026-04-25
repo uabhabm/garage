@@ -1,0 +1,16 @@
+{
+  "name": "garage",
+  "version": "1.0.0",
+  "description": "Convert Consumption Summary (User) xlsx reports to CSV",
+  "type": "module",
+  "scripts": {
+    "xlsx-to-csv": "node src/cli.mjs",
+    "dev": "node dev-server.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  }
+}
