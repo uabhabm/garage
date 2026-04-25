@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Excel → CSV (förbrukning)</title>
+    <title>Förbrukningsrapport garaget Uppfinnaren -&gt; MBF CSV</title>
     <style>
       :root {
         --bg: #0f1216;
@@ -159,10 +159,29 @@
         font-size: 0.85rem;
         color: var(--muted);
       }
+      .downloads {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.75rem 1.25rem;
+        margin: 0.5rem 0 0.75rem 0;
+      }
+      .downloads a {
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      .downloads a.link-std {
+        color: var(--acc);
+      }
+      .downloads a.link-mbf {
+        color: var(--mbf);
+      }
     </style>
   </head>
   <body>
-    <h1>Förbrukningsrapport → CSV</h1>
+    <h1>Förbrukningsrapport garaget Uppfinnaren -&gt; MBF CSV</h1>
     <p class="lead">
       Ladda upp en Consumption Summary (User) <code style="color: var(--acc)">.xlsx</code>. Filen läses i
       webbläsaren, base64-kodas och skickas till <code>/api/parse?format=json</code> (lokalt:
@@ -182,17 +201,20 @@
       <fieldset class="mbf">
         <legend>MBF / IMD (avläsning)</legend>
         <p class="hint">
-          Vid <strong>Convert to MBF CSV</strong> används start- och slutdatum som kolumnerna Start och Slut
-          (format YYYYMMDD i filen). RFID hämtas ur användarnamnet, t.ex. <code>Admin RFID (AB1E9E41)</code>.
+          Vid <strong>Convert to MBF CSV</strong> väljer du <strong>år och månad</strong>. Datum i filen blir
+          <em>Start</em> = <strong>den 1:a</strong> i vald startmånad och <em>Slut</em> = <strong>sista dagen</strong> i vald
+          slutmånad (28, 29 vid skottår i februari, 30 eller 31 i övrigt), i format YYYYMMDD. RFID hämtas ur
+          användarnamnet, t.ex. <code>Admin RFID (AB1E9E41)</code>. Efter export visas <strong>Ladda ner MBF CSV</strong>
+          under resultatet.
         </p>
         <div class="dates">
           <div>
-            <label for="dateStart">Avläsning start</label>
-            <input id="dateStart" name="dateStart" type="date" />
+            <label for="dateStart">Avläsning start (år och månad)</label>
+            <input id="dateStart" name="dateStart" type="month" />
           </div>
           <div>
-            <label for="dateEnd">Avläsning slut</label>
-            <input id="dateEnd" name="dateEnd" type="date" />
+            <label for="dateEnd">Avläsning slut (år och månad)</label>
+            <input id="dateEnd" name="dateEnd" type="month" />
           </div>
         </div>
       </fieldset>
@@ -207,9 +229,10 @@
       <h2>Resultat</h2>
       <div class="meta" id="meta"></div>
       <div id="error" class="msg-err" hidden></div>
-      <p style="margin: 0.5rem 0 0.5rem 0">
-        <a id="dl" href="#" download="export.csv" style="color: var(--acc); font-size: 0.9rem" hidden>Ladda ner CSV</a>
-      </p>
+      <div class="downloads" id="downloads" hidden>
+        <a id="dl-std" class="link-std" href="#" download="export.csv" hidden>Ladda ner standard-CSV</a>
+        <a id="dl-mbf" class="link-mbf" href="#" download="export-mbf.csv" hidden>Ladda ner MBF CSV</a>
+      </div>
       <pre id="csv" hidden></pre>
     </div>
 
@@ -221,8 +244,22 @@
       const meta = document.getElementById("meta");
       const btn = document.getElementById("go");
       const btnMbf = document.getElementById("go-mbf");
-      const dl = document.getElementById("dl");
-      let lastBlobUrl;
+      const downloads = document.getElementById("downloads");
+      const dlStd = document.getElementById("dl-std");
+      const dlMbf = document.getElementById("dl-mbf");
+      let lastBlobUrlStd;
+      let lastBlobUrlMbf;
+
+      function revokeDownloadUrls() {
+        if (lastBlobUrlStd) {
+          URL.revokeObjectURL(lastBlobUrlStd);
+          lastBlobUrlStd = null;
+        }
+        if (lastBlobUrlMbf) {
+          URL.revokeObjectURL(lastBlobUrlMbf);
+          lastBlobUrlMbf = null;
+        }
+      }
 
       function arrayBufferToBase64(buf) {
         const bytes = new Uint8Array(buf);
@@ -244,11 +281,13 @@
 
         if (mbf) {
           if (!dateStart.value || !dateEnd.value) {
-            errEl.textContent = "Fyll i avläsning start och slut för MBF-export.";
+            errEl.textContent = "Välj avläsningsmånad för start och slut (år och månad).";
             errEl.hidden = false;
             meta.textContent = "";
             pre.hidden = true;
-            dl.hidden = true;
+            downloads.hidden = true;
+            dlStd.hidden = true;
+            dlMbf.hidden = true;
             out.hidden = false;
             return;
           }
@@ -256,11 +295,10 @@
 
         errEl.hidden = true;
         pre.hidden = true;
-        dl.hidden = true;
-        if (lastBlobUrl) {
-          URL.revokeObjectURL(lastBlobUrl);
-          lastBlobUrl = null;
-        }
+        downloads.hidden = true;
+        dlStd.hidden = true;
+        dlMbf.hidden = true;
+        revokeDownloadUrls();
         out.hidden = true;
         btn.disabled = true;
         btnMbf.disabled = true;
@@ -301,11 +339,22 @@
             pre.textContent = data.csv;
             pre.hidden = false;
             const blob = new Blob([data.csv], { type: "text/csv; charset=utf-8" });
-            lastBlobUrl = URL.createObjectURL(blob);
-            dl.href = lastBlobUrl;
             const base = file.name.replace(/\.xlsx?$/i, "");
-            dl.setAttribute("download", data.csvFormat === "mbf" ? base + "-mbf.csv" : base + ".csv");
-            dl.hidden = false;
+            const urlBlob = URL.createObjectURL(blob);
+            if (data.csvFormat === "mbf") {
+              lastBlobUrlMbf = urlBlob;
+              dlMbf.href = lastBlobUrlMbf;
+              dlMbf.setAttribute("download", base + "-mbf.csv");
+              dlMbf.hidden = false;
+              dlStd.hidden = true;
+            } else {
+              lastBlobUrlStd = urlBlob;
+              dlStd.href = lastBlobUrlStd;
+              dlStd.setAttribute("download", base + ".csv");
+              dlStd.hidden = false;
+              dlMbf.hidden = true;
+            }
+            downloads.hidden = false;
             out.hidden = false;
             out.scrollIntoView({ behavior: "smooth", block: "nearest" });
             return;
@@ -327,6 +376,22 @@
         convert(false);
       });
       btnMbf.addEventListener("click", () => convert(true));
+
+      function defaultPreviousMonthYm() {
+        const d = new Date();
+        d.setDate(1);
+        d.setMonth(d.getMonth() - 1);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        return `${y}-${m}`;
+      }
+      document.addEventListener("DOMContentLoaded", () => {
+        const ym = defaultPreviousMonthYm();
+        const ds = document.getElementById("dateStart");
+        const de = document.getElementById("dateEnd");
+        if (ds && !ds.value) ds.value = ym;
+        if (de && !de.value) de.value = ym;
+      });
     </script>
   </body>
 </html>

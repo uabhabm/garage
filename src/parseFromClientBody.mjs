@@ -74,7 +74,7 @@ export function runParseFromClientBody(body) {
           ok: false,
           status: 400,
           body: {
-            error: "MBF kräver dateStart och dateEnd (YYYY-MM-DD).",
+            error: "MBF kräver dateStart och dateEnd (ÅÅÅÅ-MM för månad, eller ÅÅÅÅ-MM-DD).",
             code: "MBF_DATES_REQUIRED",
           },
         };

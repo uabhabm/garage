@@ -55,13 +55,74 @@ export function toYyyyMmDdCompact(isoDate) {
 }
 
 /**
+ * Sista kalenderdagen i månaden (28, 29 vid skottår, 30 eller 31).
+ * @param {number} y år
+ * @param {number} month1to12 1 = jan … 12 = dec
+ */
+export function lastDayOfCalendarMonth(y, month1to12) {
+  return new Date(y, month1to12, 0).getDate();
+}
+
+/**
+ * Avläsning "YYYY-MM" → kolumn Start: **den 1:a** i månaden (YYYYMMDD …01).
+ * @param {string} ym
+ */
+export function ymToStartYmd(ym) {
+  const t = String(ym).trim();
+  const m = /^(\d{4})-(\d{2})$/.exec(t);
+  if (!m) {
+    const err = new Error(`Ogiltig månad (förväntat YYYY-MM): "${ym}"`);
+    err.code = "MBF_BAD_DATE";
+    throw err;
+  }
+  const y = m[1];
+  const mo = m[2];
+  return `${y}${mo}01`;
+}
+
+/**
+ * Avläsning "YYYY-MM" → kolumn Slut: **sista dagen** i månaden (YYYYMMDD …28–31, feb 29 vid skottår).
+ * @param {string} ym
+ */
+export function ymToEndYmd(ym) {
+  const t = String(ym).trim();
+  const m = /^(\d{4})-(\d{2})$/.exec(t);
+  if (!m) {
+    const err = new Error(`Ogiltig månad (förväntat YYYY-MM): "${ym}"`);
+    err.code = "MBF_BAD_DATE";
+    throw err;
+  }
+  const y = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10);
+  if (mo < 1 || mo > 12) {
+    const err = new Error(`Ogiltig månad: "${ym}"`);
+    err.code = "MBF_BAD_DATE";
+    throw err;
+  }
+  const d = lastDayOfCalendarMonth(y, mo);
+  return `${m[1]}${m[2]}${String(d).padStart(2, "0")}`;
+}
+
+/**
+ * @param {string} s YYYY-MM eller YYYY-MM-DD
+ * @param {"start"|"end"} role start → första dagen om YYYY-MM, end → sista dagen om YYYY-MM
+ */
+function periodBoundaryToYmd(s, role) {
+  const t = String(s).trim();
+  if (/^\d{4}-\d{2}$/.test(t)) {
+    return role === "start" ? ymToStartYmd(t) : ymToEndYmd(t);
+  }
+  return toYyyyMmDdCompact(t);
+}
+
+/**
  * @param { { user: string, totalDuration: string, totalEnergy: string }[] } rows
- * @param {{ dateStart: string, dateEnd: string }} period ISO YYYY-MM-DD
+ * @param {{ dateStart: string, dateEnd: string }} period YYYY-MM (första/sista dagen i månaden) eller YYYY-MM-DD
  * @returns {string} full CSV inkl. rubrikrad och avslutande radbrytning
  */
 export function rowsToMbfCsv(rows, period) {
-  const startYmd = toYyyyMmDdCompact(period.dateStart);
-  const endYmd = toYyyyMmDdCompact(period.dateEnd);
+  const startYmd = periodBoundaryToYmd(period.dateStart, "start");
+  const endYmd = periodBoundaryToYmd(period.dateEnd, "end");
   if (startYmd > endYmd) {
     const err = new Error("Startdatum får inte vara efter slutdatum.");
     err.code = "MBF_BAD_PERIOD";
